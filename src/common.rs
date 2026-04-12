@@ -3,9 +3,14 @@ use image::{ImageEncoder, ImageFormat};
 use std::fs;
 use std::io::Cursor;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-pub const VERSION: &str = "2.0.0";
+pub const VERSION: &str = "2.1.0";
+pub const DEFAULT_PORT: u16 = 18340;
+
+/// Shared state: path to the most recently saved screenshot PNG
+pub type LatestImage = Arc<Mutex<Option<PathBuf>>>;
 
 pub fn temp_dir() -> PathBuf {
     std::env::temp_dir().join("clipaste")
@@ -136,22 +141,26 @@ pub fn dib_to_png(dib_data: &[u8]) -> Option<Vec<u8>> {
 
 pub fn print_help() {
     println!(
-        "clipaste v{VERSION} — Fix screenshot paste in terminals
+        "clipaste v{VERSION} — Fix screenshot paste in terminals (local + SSH)
 
 USAGE
-  clipaste            Run in foreground (for brew services / launchd / Task Scheduler)
-  clipaste --version  Print version
-  clipaste --help     Show this help
+  clipaste                       Run daemon (clipboard watcher + HTTP server)
+  clipaste ssh-setup user@host   Configure remote server for image paste
+  clipaste --version             Print version
+  clipaste --help                Show this help
 
 WHAT IT DOES
-  Watches the clipboard. When a screenshot is detected (image data without
-  a file path), clipaste saves it as a temp PNG and registers the file path
-  on the clipboard. This lets terminals paste via Cmd+V (macOS) or Ctrl+V.
+  Local:  Watches the clipboard. When a screenshot is detected, saves it as
+          a temp PNG and registers the file path. Cmd+V / Ctrl+V just work.
+
+  Remote: Runs an HTTP server on port {DEFAULT_PORT}. Use 'ssh-setup' to
+          configure SSH RemoteForward + xclip shim on a remote server.
+          After setup, Ctrl+V pastes screenshots into remote Claude Code.
 
 COMPATIBILITY
   macOS:   Ghostty, Alacritty, iTerm2, Terminal.app, WezTerm, Kitty
   Windows: Windows Terminal, PowerShell, cmd.exe
-  Tools:   Claude Code, Codex CLI, Cursor CLI
+  Remote:  Any Linux server via SSH (Claude Code, Codex CLI, Cursor CLI)
 
 MORE INFO
   https://github.com/hqhq1025/clipaste"

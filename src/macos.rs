@@ -87,7 +87,7 @@ fn read_png_data(pb: &NSPasteboard) -> Option<Vec<u8>> {
     None
 }
 
-fn normalize(pb: &NSPasteboard) {
+fn normalize(pb: &NSPasteboard, latest: &common::LatestImage) {
     let png_data = match read_png_data(pb) {
         Some(d) => d,
         None => {
@@ -100,6 +100,11 @@ fn normalize(pb: &NSPasteboard) {
         Some(p) => p,
         None => return,
     };
+
+    // Update shared state for HTTP server
+    if let Ok(mut guard) = latest.lock() {
+        *guard = Some(file_path.clone());
+    }
 
     let path_str = file_path.to_string_lossy().to_string();
 
@@ -138,7 +143,7 @@ fn normalize(pb: &NSPasteboard) {
     common::clean_old_temp_files();
 }
 
-pub fn run() {
+pub fn run(latest: common::LatestImage) {
     common::ensure_temp_dir();
     common::log(&format!(
         "v{} started (pid {})",
@@ -204,7 +209,7 @@ pub fn run() {
             return;
         }
 
-        normalize(&pb);
+        normalize(&pb, &latest);
 
         LAST_NORMALIZE.with(|c| c.set(Some(Instant::now())));
         LAST_CHANGE.with(|c| c.set(pb.changeCount()));
