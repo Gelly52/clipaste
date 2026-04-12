@@ -20,7 +20,13 @@ fn main() {
 
     // clipaste ssh-setup user@host
     if args.len() >= 3 && args[1] == "ssh-setup" {
-        ssh_setup::run(&args[2]);
+        ssh_setup::run_ssh(&args[2]);
+        return;
+    }
+
+    // clipaste wsl-setup (run inside WSL2)
+    if args.len() >= 2 && args[1] == "wsl-setup" {
+        ssh_setup::run_wsl();
         return;
     }
 

@@ -2,18 +2,16 @@ use crate::common;
 use std::io::Write;
 use std::process::Command;
 
-const XCLIP_SHIM: &str = r#"#!/bin/bash
-# clipaste xclip shim — intercepts xclip calls and fetches images from local clipaste
-# Installed by: clipaste ssh-setup
+/// xclip shim template — {CLIPASTE_URL} will be replaced at install time
+const XCLIP_SHIM_TEMPLATE: &str = r#"#!/bin/bash
+# clipaste xclip shim — intercepts xclip calls and fetches images from clipaste
+# Installed by: clipaste wsl-setup
 
-CLIPASTE_PORT="${CLIPASTE_PORT:-18340}"
-CLIPASTE_URL="http://127.0.0.1:${CLIPASTE_PORT}"
-REAL_XCLIP="$(command -v -p xclip 2>/dev/null || echo /usr/bin/xclip)"
+CLIPASTE_URL="__CLIPASTE_URL__"
+REAL_XCLIP="$(PATH=$(echo "$PATH" | sed "s|$HOME/.local/bin:||g") command -v xclip 2>/dev/null)"
 
-# Only intercept clipboard read operations
 case "$*" in
     *"-selection clipboard"*"-t TARGETS"*"-o"*|*"-sel clip"*"-t TARGETS"*"-o"*)
-        # Claude Code asks: what types are available?
         if curl -sf "${CLIPASTE_URL}/clipboard/type" 2>/dev/null | grep -q '"image"'; then
             echo "TARGETS"
             echo "image/png"
@@ -21,19 +19,19 @@ case "$*" in
         fi
         ;;
     *"-selection clipboard"*"-t image/png"*"-o"*|*"-sel clip"*"-t image/png"*"-o"*)
-        # Claude Code asks: give me the image
         tmpfile=$(mktemp /tmp/clipaste-remote-XXXXXX.png)
         if curl -sf -o "$tmpfile" "${CLIPASTE_URL}/clipboard/image" 2>/dev/null; then
-            cat "$tmpfile"
-            rm -f "$tmpfile"
-            exit 0
+            if [ -s "$tmpfile" ]; then
+                cat "$tmpfile"
+                rm -f "$tmpfile"
+                exit 0
+            fi
         fi
         rm -f "$tmpfile"
         ;;
 esac
 
-# Fall through to real xclip for everything else
-if [ -x "$REAL_XCLIP" ]; then
+if [ -n "$REAL_XCLIP" ] && [ -x "$REAL_XCLIP" ]; then
     exec "$REAL_XCLIP" "$@"
 else
     echo "xclip not found" >&2
@@ -41,13 +39,12 @@ else
 fi
 "#;
 
-const WL_PASTE_SHIM: &str = r#"#!/bin/bash
+const WL_PASTE_SHIM_TEMPLATE: &str = r#"#!/bin/bash
 # clipaste wl-paste shim — for Wayland environments
-# Installed by: clipaste ssh-setup
+# Installed by: clipaste wsl-setup
 
-CLIPASTE_PORT="${CLIPASTE_PORT:-18340}"
-CLIPASTE_URL="http://127.0.0.1:${CLIPASTE_PORT}"
-REAL_WL_PASTE="$(command -v -p wl-paste 2>/dev/null || echo /usr/bin/wl-paste)"
+CLIPASTE_URL="__CLIPASTE_URL__"
+REAL_WL_PASTE="$(PATH=$(echo "$PATH" | sed "s|$HOME/.local/bin:||g") command -v wl-paste 2>/dev/null)"
 
 case "$*" in
     *"--list-types"*)
@@ -60,15 +57,17 @@ case "$*" in
     *"--type image/"*|*"-t image/"*)
         tmpfile=$(mktemp /tmp/clipaste-remote-XXXXXX.png)
         if curl -sf -o "$tmpfile" "${CLIPASTE_URL}/clipboard/image" 2>/dev/null; then
-            cat "$tmpfile"
-            rm -f "$tmpfile"
-            exit 0
+            if [ -s "$tmpfile" ]; then
+                cat "$tmpfile"
+                rm -f "$tmpfile"
+                exit 0
+            fi
         fi
         rm -f "$tmpfile"
         ;;
 esac
 
-if [ -x "$REAL_WL_PASTE" ]; then
+if [ -n "$REAL_WL_PASTE" ] && [ -x "$REAL_WL_PASTE" ]; then
     exec "$REAL_WL_PASTE" "$@"
 else
     echo "wl-paste not found" >&2
@@ -76,39 +75,20 @@ else
 fi
 "#;
 
-pub fn run(host: &str) {
-    println!("clipaste ssh-setup for {host}");
-    println!();
+fn install_shims_via_ssh(host: &str, clipaste_url: &str) -> Result<(), String> {
+    let xclip_shim = XCLIP_SHIM_TEMPLATE.replace("__CLIPASTE_URL__", clipaste_url);
+    let wl_paste_shim = WL_PASTE_SHIM_TEMPLATE.replace("__CLIPASTE_URL__", clipaste_url);
 
-    // Step 1: Check local HTTP server
-    print!("[1/4] Checking local clipaste server... ");
-    std::io::stdout().flush().unwrap();
-    let health = Command::new("curl")
-        .args(["-sf", &format!("http://127.0.0.1:{}/health", common::DEFAULT_PORT)])
-        .output();
-    match health {
-        Ok(o) if o.status.success() => println!("OK"),
-        _ => {
-            println!("FAILED");
-            eprintln!("  clipaste daemon is not running. Start it first:");
-            eprintln!("  brew services start clipaste");
-            std::process::exit(1);
-        }
-    }
-
-    // Step 2: Deploy xclip shim to remote
-    print!("[2/4] Installing xclip shim on {host}... ");
-    std::io::stdout().flush().unwrap();
     let setup_script = format!(
         r#"
 mkdir -p ~/.local/bin
 cat > ~/.local/bin/xclip << 'SHIMEOF'
-{XCLIP_SHIM}
+{xclip_shim}
 SHIMEOF
 chmod +x ~/.local/bin/xclip
 
 cat > ~/.local/bin/wl-paste << 'SHIMEOF'
-{WL_PASTE_SHIM}
+{wl_paste_shim}
 SHIMEOF
 chmod +x ~/.local/bin/wl-paste
 
@@ -132,92 +112,220 @@ echo "OK"
         .stderr(std::process::Stdio::piped())
         .spawn()
         .and_then(|mut child| {
-            child
-                .stdin
-                .take()
-                .unwrap()
-                .write_all(setup_script.as_bytes())?;
+            child.stdin.take().unwrap().write_all(setup_script.as_bytes())?;
             child.wait_with_output()
         });
 
     match result {
-        Ok(o) if o.status.success() => {
-            println!("{}", String::from_utf8_lossy(&o.stdout).trim());
+        Ok(o) if o.status.success() => Ok(()),
+        Ok(o) => Err(String::from_utf8_lossy(&o.stderr).trim().to_string()),
+        Err(e) => Err(format!("SSH error: {e}")),
+    }
+}
+
+fn install_shims_locally(clipaste_url: &str) -> Result<(), String> {
+    let xclip_shim = XCLIP_SHIM_TEMPLATE.replace("__CLIPASTE_URL__", clipaste_url);
+    let wl_paste_shim = WL_PASTE_SHIM_TEMPLATE.replace("__CLIPASTE_URL__", clipaste_url);
+
+    let bin_dir = dirs_home().join(".local/bin");
+    std::fs::create_dir_all(&bin_dir).map_err(|e| format!("mkdir: {e}"))?;
+
+    let xclip_path = bin_dir.join("xclip");
+    std::fs::write(&xclip_path, xclip_shim).map_err(|e| format!("write xclip: {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&xclip_path, std::fs::Permissions::from_mode(0o755)).ok();
+    }
+
+    let wl_paste_path = bin_dir.join("wl-paste");
+    std::fs::write(&wl_paste_path, wl_paste_shim).map_err(|e| format!("write wl-paste: {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&wl_paste_path, std::fs::Permissions::from_mode(0o755)).ok();
+    }
+
+    // Ensure PATH
+    let bashrc = dirs_home().join(".bashrc");
+    if bashrc.exists() {
+        let content = std::fs::read_to_string(&bashrc).unwrap_or_default();
+        if !content.contains("clipaste PATH") {
+            let mut f = std::fs::OpenOptions::new().append(true).open(&bashrc)
+                .map_err(|e| format!("append bashrc: {e}"))?;
+            writeln!(f, "\n# clipaste PATH\nexport PATH=\"$HOME/.local/bin:$PATH\"").ok();
         }
-        Ok(o) => {
-            println!("FAILED");
-            eprintln!("  {}", String::from_utf8_lossy(&o.stderr).trim());
-            std::process::exit(1);
-        }
+    }
+
+    Ok(())
+}
+
+// ─── SSH Setup ───
+
+pub fn run_ssh(host: &str) {
+    println!("clipaste ssh-setup for {host}");
+    println!();
+
+    // Step 1: Check local HTTP server
+    print!("[1/3] Checking local clipaste server... ");
+    std::io::stdout().flush().unwrap();
+    if !check_health(&format!("http://127.0.0.1:{}", common::DEFAULT_PORT)) {
+        println!("FAILED");
+        eprintln!("  clipaste daemon is not running. Start it first:");
+        eprintln!("  brew services start clipaste");
+        std::process::exit(1);
+    }
+    println!("OK");
+
+    // Step 2: Deploy shims to remote
+    let url = format!("http://127.0.0.1:{}", common::DEFAULT_PORT);
+    print!("[2/3] Installing shims on {host}... ");
+    std::io::stdout().flush().unwrap();
+    match install_shims_via_ssh(host, &url) {
+        Ok(()) => println!("OK"),
         Err(e) => {
             println!("FAILED");
-            eprintln!("  SSH error: {e}");
+            eprintln!("  {e}");
             std::process::exit(1);
         }
     }
 
     // Step 3: Configure SSH RemoteForward
-    print!("[3/4] Configuring SSH RemoteForward... ");
+    print!("[3/3] Configuring SSH RemoteForward... ");
     std::io::stdout().flush().unwrap();
-    let ssh_config_path = dirs_next().join(".ssh/config");
-    let port = common::DEFAULT_PORT;
-
-    let config_content = std::fs::read_to_string(&ssh_config_path).unwrap_or_default();
-
-    // Check if RemoteForward already configured for this host
-    let forward_line = format!("RemoteForward {port} 127.0.0.1:{port}");
-    if config_content.contains(&forward_line) {
-        println!("already configured");
-    } else {
-        // Find the Host block and add RemoteForward
-        let host_pattern = extract_hostname(host);
-        let mut found = false;
-        let mut new_config = String::new();
-        for line in config_content.lines() {
-            new_config.push_str(line);
-            new_config.push('\n');
-            if !found && line.trim().starts_with("HostName") && line.contains(&host_pattern) {
-                new_config.push_str(&format!("    {forward_line}\n"));
-                found = true;
-            }
-        }
-        if !found {
-            // Append a new Host block
-            new_config.push_str(&format!(
-                "\n# clipaste remote paste\nHost clipaste-{host_pattern}\n    HostName {host_pattern}\n    {forward_line}\n"
-            ));
-        }
-        if let Err(e) = std::fs::write(&ssh_config_path, &new_config) {
+    match add_remote_forward(host) {
+        Ok(msg) => println!("{msg}"),
+        Err(e) => {
             println!("FAILED");
-            eprintln!("  Cannot write ~/.ssh/config: {e}");
+            eprintln!("  {e}");
             std::process::exit(1);
         }
-        println!("OK (added RemoteForward)");
     }
-
-    // Step 4: Verify tunnel
-    print!("[4/4] Verifying (requires new SSH session)... ");
-    std::io::stdout().flush().unwrap();
-    println!("SKIP (connect with new SSH session to activate tunnel)");
 
     println!();
     println!("Setup complete! Next steps:");
     println!("  1. Open a NEW SSH session: ssh {host}");
     println!("  2. Take a screenshot on your Mac");
-    println!("  3. In remote Claude Code, press Ctrl+V");
-    println!();
-    println!("The RemoteForward tunnels port {port} to your local clipaste.");
-    println!("The xclip shim at ~/.local/bin/xclip intercepts Claude Code's clipboard reads.");
+    println!("  3. In remote Claude Code / Codex, press Ctrl+V");
 }
 
-fn dirs_next() -> std::path::PathBuf {
+// ─── WSL Setup ───
+
+pub fn run_wsl() {
+    println!("clipaste wsl-setup");
+    println!();
+
+    // Step 1: Detect Windows host IP
+    print!("[1/3] Detecting Windows host IP... ");
+    std::io::stdout().flush().unwrap();
+    let win_ip = detect_wsl_host_ip();
+    match &win_ip {
+        Some(ip) => println!("{ip}"),
+        None => {
+            println!("FAILED");
+            eprintln!("  Cannot detect Windows host IP from /etc/resolv.conf");
+            eprintln!("  Make sure you're running this inside WSL2");
+            std::process::exit(1);
+        }
+    }
+    let win_ip = win_ip.unwrap();
+
+    // Step 2: Check clipaste HTTP server on Windows host
+    let url = format!("http://{win_ip}:{}", common::DEFAULT_PORT);
+    print!("[2/3] Checking clipaste on Windows host ({url})... ");
+    std::io::stdout().flush().unwrap();
+    if !check_health(&url) {
+        println!("FAILED");
+        eprintln!("  clipaste.exe is not running on Windows, or port {} is blocked.", common::DEFAULT_PORT);
+        eprintln!("  Make sure clipaste.exe is running on the Windows side.");
+        std::process::exit(1);
+    }
+    println!("OK");
+
+    // Step 3: Install shims locally (we're inside WSL2)
+    print!("[3/3] Installing xclip/wl-paste shims... ");
+    std::io::stdout().flush().unwrap();
+    match install_shims_locally(&url) {
+        Ok(()) => println!("OK"),
+        Err(e) => {
+            println!("FAILED");
+            eprintln!("  {e}");
+            std::process::exit(1);
+        }
+    }
+
+    println!();
+    println!("Setup complete! Now:");
+    println!("  1. Open a new terminal (or run: source ~/.bashrc)");
+    println!("  2. Take a screenshot on Windows (Win+Shift+S)");
+    println!("  3. In Claude Code / Codex, press Ctrl+V");
+    println!();
+    println!("No SSH tunnel needed — WSL2 connects directly to Windows host.");
+}
+
+// ─── Helpers ───
+
+fn check_health(base_url: &str) -> bool {
+    Command::new("curl")
+        .args(["-sf", &format!("{base_url}/health")])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+fn detect_wsl_host_ip() -> Option<String> {
+    // WSL2: Windows host IP is the nameserver in /etc/resolv.conf
+    let content = std::fs::read_to_string("/etc/resolv.conf").ok()?;
+    for line in content.lines() {
+        let line = line.trim();
+        if line.starts_with("nameserver") {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                return Some(parts[1].to_string());
+            }
+        }
+    }
+    None
+}
+
+fn add_remote_forward(host: &str) -> Result<String, String> {
+    let ssh_config_path = dirs_home().join(".ssh/config");
+    let port = common::DEFAULT_PORT;
+    let config_content = std::fs::read_to_string(&ssh_config_path).unwrap_or_default();
+    let forward_line = format!("RemoteForward {port} 127.0.0.1:{port}");
+
+    if config_content.contains(&forward_line) {
+        return Ok("already configured".to_string());
+    }
+
+    let host_pattern = extract_hostname(host);
+    let mut found = false;
+    let mut new_config = String::new();
+    for line in config_content.lines() {
+        new_config.push_str(line);
+        new_config.push('\n');
+        if !found && line.trim().starts_with("HostName") && line.contains(&host_pattern) {
+            new_config.push_str(&format!("    {forward_line}\n"));
+            found = true;
+        }
+    }
+    if !found {
+        new_config.push_str(&format!(
+            "\n# clipaste remote paste\nHost clipaste-{host_pattern}\n    HostName {host_pattern}\n    {forward_line}\n"
+        ));
+    }
+    std::fs::write(&ssh_config_path, &new_config)
+        .map_err(|e| format!("Cannot write ~/.ssh/config: {e}"))?;
+    Ok("OK (added RemoteForward)".to_string())
+}
+
+fn dirs_home() -> std::path::PathBuf {
     std::env::var("HOME")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::path::PathBuf::from("/tmp"))
 }
 
 fn extract_hostname(host: &str) -> String {
-    // "user@1.2.3.4" → "1.2.3.4"
     if let Some(at) = host.rfind('@') {
         host[at + 1..].to_string()
     } else {

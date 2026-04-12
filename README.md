@@ -1,6 +1,6 @@
 # clipaste
 
-Fix screenshot paste in terminal AI tools — locally and over SSH.
+Fix screenshot paste in terminal AI tools — locally, over SSH, and in WSL2.
 
 **Problem:** You take a screenshot, switch to Claude Code / Codex / Cursor in your terminal, press **Ctrl+V** — nothing happens. Or you're SSH'd into a remote server and can't paste screenshots at all.
 
@@ -72,33 +72,61 @@ HTTP server ◄──── SSH RemoteForward ────► curl localhost:183
     └──── serves PNG ─────────────────► Image delivered ✅
 ```
 
+## WSL2 Paste
+
+If you run Claude Code / Codex inside WSL2, clipaste bridges the Windows clipboard to WSL2. Run this **inside WSL2**:
+
+```bash
+clipaste wsl-setup
+```
+
+This installs the same xclip shim, pointed at clipaste.exe running on your Windows host. No SSH tunnel needed — WSL2 connects directly.
+
+**Prerequisites:** clipaste.exe must be running on the Windows side (installed via the PowerShell one-liner above).
+
+```
+Windows Host                       WSL2
+────────────                       ────
+Win+Shift+S screenshot             Claude Code runs "xclip"
+    │                                      │
+    ▼                                      ▼
+clipaste.exe saves PNG          xclip shim intercepts call
+    │                                      │
+    ▼                                      ▼
+HTTP server ◄──── WSL2 network ────────► curl $WIN_HOST:18340
+(:18340)        (direct, no tunnel)        │
+    │                                      ▼
+    └──── serves PNG ──────────────► Image delivered ✅
+```
+
 ## Paste shortcuts
 
 | Scenario | Shortcut | How it works |
 |----------|----------|-------------|
-| **Local terminal** | **Cmd+V** | Ghostty/iTerm2 paste file path → tool reads file |
+| **Local terminal (macOS)** | **Cmd+V** | Ghostty/iTerm2 paste file path → tool reads file |
 | **Local terminal** | **Ctrl+V** | Claude Code reads clipboard image directly |
-| **SSH remote** | **Ctrl+V** | Claude Code → xclip shim → HTTP tunnel → local PNG |
+| **SSH remote** | **Ctrl+V** | xclip shim → HTTP tunnel → local PNG |
+| **WSL2** | **Ctrl+V** | xclip shim → HTTP → Windows host PNG |
 
-**Tip:** Ctrl+V works everywhere (local + remote). Cmd+V is a local-only bonus.
+**Tip:** Ctrl+V works everywhere (local, SSH, WSL2). Cmd+V is a macOS local-only bonus.
 
 ## Compatibility
 
-| Terminal | macOS Cmd+V | macOS Ctrl+V | Windows Ctrl+V | SSH Ctrl+V |
-|----------|:-----------:|:------------:|:--------------:|:----------:|
-| Ghostty  | ✅          | ✅           | —              | ✅         |
-| Alacritty| ✅          | ✅           | —              | ✅         |
-| iTerm2   | ✅          | ✅           | —              | ✅         |
-| Terminal.app | ✅       | ✅           | —              | ✅         |
-| WezTerm  | ✅          | ✅           | ✅             | ✅         |
-| Kitty    | ✅          | ✅           | ✅             | ✅         |
-| Windows Terminal | —   | —            | ✅             | —          |
+| Terminal | macOS Cmd+V | macOS Ctrl+V | Windows Ctrl+V | SSH Ctrl+V | WSL2 Ctrl+V |
+|----------|:-----------:|:------------:|:--------------:|:----------:|:-----------:|
+| Ghostty  | ✅          | ✅           | —              | ✅         | —           |
+| Alacritty| ✅          | ✅           | —              | ✅         | —           |
+| iTerm2   | ✅          | ✅           | —              | ✅         | —           |
+| Terminal.app | ✅       | ✅           | —              | ✅         | —           |
+| WezTerm  | ✅          | ✅           | ✅             | ✅         | ✅          |
+| Kitty    | ✅          | ✅           | ✅             | ✅         | ✅          |
+| Windows Terminal | —   | —            | ✅             | —          | ✅          |
 
-| AI Tool | Local | SSH Remote |
-|---------|:-----:|:----------:|
-| Claude Code | ✅ | ✅ |
-| Codex CLI   | ✅ | ✅ |
-| Cursor CLI  | ✅ | ✅ |
+| AI Tool | Local | SSH Remote | WSL2 |
+|---------|:-----:|:----------:|:----:|
+| Claude Code | ✅ | ✅ | ✅ |
+| Codex CLI   | ✅ | ✅ | ✅ |
+| Cursor CLI  | ✅ | ✅ | ✅ |
 
 ## Managing
 

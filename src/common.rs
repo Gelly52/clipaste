@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-pub const VERSION: &str = "2.1.0";
+pub const VERSION: &str = "2.2.0";
 pub const DEFAULT_PORT: u16 = 18340;
 
 /// Shared state: path to the most recently saved screenshot PNG
@@ -141,11 +141,12 @@ pub fn dib_to_png(dib_data: &[u8]) -> Option<Vec<u8>> {
 
 pub fn print_help() {
     println!(
-        "clipaste v{VERSION} — Fix screenshot paste in terminals (local + SSH)
+        "clipaste v{VERSION} — Fix screenshot paste in terminals (local + SSH + WSL2)
 
 USAGE
   clipaste                       Run daemon (clipboard watcher + HTTP server)
-  clipaste ssh-setup user@host   Configure remote server for image paste
+  clipaste ssh-setup user@host   Configure remote server for image paste via SSH
+  clipaste wsl-setup             Configure WSL2 for image paste from Windows host
   clipaste --version             Print version
   clipaste --help                Show this help
 
@@ -153,14 +154,17 @@ WHAT IT DOES
   Local:  Watches the clipboard. When a screenshot is detected, saves it as
           a temp PNG and registers the file path. Cmd+V / Ctrl+V just work.
 
-  Remote: Runs an HTTP server on port {DEFAULT_PORT}. Use 'ssh-setup' to
+  SSH:    Runs an HTTP server on port {DEFAULT_PORT}. Use 'ssh-setup' to
           configure SSH RemoteForward + xclip shim on a remote server.
-          After setup, Ctrl+V pastes screenshots into remote Claude Code.
+
+  WSL2:   Run 'wsl-setup' inside WSL2 to install xclip shim that fetches
+          images from clipaste.exe on the Windows host. No SSH needed.
 
 COMPATIBILITY
   macOS:   Ghostty, Alacritty, iTerm2, Terminal.app, WezTerm, Kitty
   Windows: Windows Terminal, PowerShell, cmd.exe
-  Remote:  Any Linux server via SSH (Claude Code, Codex CLI, Cursor CLI)
+  Remote:  Any Linux server via SSH
+  WSL2:    Ubuntu, Debian, Fedora, Arch on WSL2
 
 MORE INFO
   https://github.com/hqhq1025/clipaste"
