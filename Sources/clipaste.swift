@@ -12,7 +12,7 @@
 import AppKit
 import Foundation
 
-let version = "1.0.0"
+let version = "1.1.0"
 
 // MARK: - CLI
 
@@ -127,14 +127,13 @@ func normalizeIfNeeded() {
 
     guard isImageOnlyClipboard() else { return }
 
-    let tiffData = pb.data(forType: .tiff)
     let existingPNG = pb.data(forType: publicPNG)
 
     let pngData: Data
     if let existing = existingPNG {
         pngData = existing
-    } else if let tiff = tiffData,
-              let image = NSImage(data: tiff),
+    } else if let tiffData = pb.data(forType: .tiff),
+              let image = NSImage(data: tiffData),
               let tiffRep = image.tiffRepresentation,
               let bitmapRep = NSBitmapImageRep(data: tiffRep),
               let converted = bitmapRep.representation(using: .png, properties: [:]) {
@@ -146,15 +145,13 @@ func normalizeIfNeeded() {
 
     guard let fileURL = savePNGToTemp(pngData) else { return }
 
-    // Rewrite clipboard: file URL (for Cmd+V) + image data (for Ctrl+V)
+    // Rewrite clipboard: file URL (for Cmd+V) + PNG/PNGf (for Ctrl+V)
+    // Skip TIFF to avoid writing tens of MBs back — saves ~70ms
     pb.clearContents()
     pb.writeObjects([fileURL as NSURL])
-    pb.addTypes([publicPNG, pngfType, .tiff], owner: nil)
+    pb.addTypes([publicPNG, pngfType], owner: nil)
     pb.setData(pngData, forType: publicPNG)
     pb.setData(pngData, forType: pngfType)
-    if let tiff = tiffData {
-        pb.setData(tiff, forType: .tiff)
-    }
 
     lastOwnWrite = pb.changeCount
     lastChangeCount = pb.changeCount
@@ -168,7 +165,7 @@ func normalizeIfNeeded() {
 ensureTempDir()
 log("v\(version) started (pid \(ProcessInfo.processInfo.processIdentifier))")
 
-let timer = Timer(timeInterval: 0.1, repeats: true) { _ in
+let timer = Timer(timeInterval: 0.03, repeats: true) { _ in  // 30ms — fast enough to beat Cmd+V
     normalizeIfNeeded()
 }
 RunLoop.current.add(timer, forMode: .default)
