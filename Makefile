@@ -1,20 +1,16 @@
 PREFIX ?= /usr/local
 
-SWIFT_FLAGS = -O -framework AppKit
-SOURCE = Sources/clipaste.swift
-BINARY = clipaste
-
 .PHONY: build install uninstall clean
 
 build:
-	swiftc $(SWIFT_FLAGS) -o $(BINARY) $(SOURCE)
+	cargo build --release
 
 install: build
 	install -d $(PREFIX)/bin
-	install -m 755 $(BINARY) $(PREFIX)/bin/$(BINARY)
+	install -m 755 target/release/clipaste $(PREFIX)/bin/clipaste
 
 uninstall:
-	rm -f $(PREFIX)/bin/$(BINARY)
+	rm -f $(PREFIX)/bin/clipaste
 
 clean:
-	rm -f $(BINARY)
+	cargo clean

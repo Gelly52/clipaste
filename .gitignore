@@ -1,13 +1,10 @@
 # Build output
+/target/
 clipaste
-*.o
-*.d
+*.exe
 
 # macOS
 .DS_Store
 
-# Xcode
-*.xcodeproj
-*.xcworkspace
-build/
-DerivedData/
+# Promo copy (not part of the tool)
+/promo-copy/
