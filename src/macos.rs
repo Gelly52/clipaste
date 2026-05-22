@@ -128,6 +128,12 @@ fn normalize(pb: &NSPasteboard, latest: &common::LatestImage) {
     pb.setData_forType(Some(&ns_png_data), &png_t);
     pb.setData_forType(Some(&ns_png_data), &pngf_t);
 
+    // Also set plain-text path so `pbpaste`, SSH terminal paste, and apps that only
+    // read string types get the path. file-url alone isn't enough for those consumers.
+    let str_t = string_type();
+    let ns_path_text = NSString::from_str(&path_str);
+    pb.setString_forType(&ns_path_text, &str_t);
+
     let filename = file_path
         .file_name()
         .map(|f| f.to_string_lossy().to_string())

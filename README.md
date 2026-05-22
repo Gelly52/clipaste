@@ -112,6 +112,8 @@ HTTP server ◄──── WSL2 network ────────► curl $WIN_H
 
 **Tip:** Ctrl+V works everywhere (local, SSH, WSL2). Cmd+V is a macOS local-only bonus.
 
+> **Important:** In an SSH session, **always use Ctrl+V**, never Cmd+V. Cmd+V pastes the local Mac path as text, which the remote agent cannot read. Ctrl+V triggers the xclip shim, which fetches the image through the SSH tunnel and gives the remote agent a real remote path.
+
 ## Compatibility
 
 | Terminal | macOS Cmd+V | macOS Ctrl+V | Windows Ctrl+V | SSH Ctrl+V | WSL2 Ctrl+V |

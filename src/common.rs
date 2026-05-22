@@ -6,14 +6,42 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-pub const VERSION: &str = "2.2.2";
+pub const VERSION: &str = "2.3.0";
 pub const DEFAULT_PORT: u16 = 18340;
 
 /// Shared state: path to the most recently saved screenshot PNG
 pub type LatestImage = Arc<Mutex<Option<PathBuf>>>;
 
 pub fn temp_dir() -> PathBuf {
-    std::env::temp_dir().join("clipaste")
+    cache_root().join("clipaste")
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn cache_root() -> PathBuf {
+    if let Some(xdg) = std::env::var_os("XDG_CACHE_HOME") {
+        let p = PathBuf::from(xdg);
+        if !p.as_os_str().is_empty() {
+            return p;
+        }
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let p = PathBuf::from(home);
+        if !p.as_os_str().is_empty() {
+            return p.join(".cache");
+        }
+    }
+    std::env::temp_dir()
+}
+
+#[cfg(target_os = "windows")]
+fn cache_root() -> PathBuf {
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        let p = PathBuf::from(local);
+        if !p.as_os_str().is_empty() {
+            return p;
+        }
+    }
+    std::env::temp_dir()
 }
 
 pub fn ensure_temp_dir() {
@@ -36,14 +64,30 @@ fn chrono_lite() -> String {
 }
 
 fn timestamp_for_filename() -> String {
-    let d = SystemTime::now()
+    let ms = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default();
-    format!("{}", d.as_millis())
+        .unwrap_or_default()
+        .as_millis() as u64;
+    to_base36(ms)
+}
+
+fn to_base36(mut n: u64) -> String {
+    const ALPHABET: &[u8; 36] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+    if n == 0 {
+        return "0".to_string();
+    }
+    let mut buf = [0u8; 13];
+    let mut i = buf.len();
+    while n > 0 {
+        i -= 1;
+        buf[i] = ALPHABET[(n % 36) as usize];
+        n /= 36;
+    }
+    std::str::from_utf8(&buf[i..]).unwrap().to_string()
 }
 
 pub fn save_png_to_temp(png_data: &[u8]) -> Option<PathBuf> {
-    let name = format!("screenshot-{}.png", timestamp_for_filename());
+    let name = format!("shot-{}.png", timestamp_for_filename());
     let path = temp_dir().join(name);
     match fs::write(&path, png_data) {
         Ok(()) => Some(path),
