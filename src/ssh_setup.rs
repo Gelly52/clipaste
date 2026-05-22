@@ -290,37 +290,95 @@ fn detect_wsl_host_ip() -> Option<String> {
 
 fn add_remote_forward(host: &str) -> Result<String, String> {
     let ssh_config_path = dirs_home().join(".ssh/config");
+    let ssh_dir = ssh_config_path.parent().unwrap();
+    if !ssh_dir.exists() {
+        std::fs::create_dir_all(ssh_dir)
+            .map_err(|e| format!("Cannot create ~/.ssh: {e}"))?;
+    }
     let port = common::DEFAULT_PORT;
     let config_content = std::fs::read_to_string(&ssh_config_path).unwrap_or_default();
     let forward_line = format!("RemoteForward {port} 127.0.0.1:{port}");
+    let host_pattern = extract_hostname(host);
 
-    if config_content.contains(&forward_line) {
+    // Two-pass approach:
+    // Pass 1: find which line to inject after (matching by Host alias or HostName)
+    // Pass 2: build new config with injection
+
+    let lines: Vec<&str> = config_content.lines().collect();
+    let mut inject_after: Option<usize> = None;
+    let mut in_matching_block = false;
+    let mut found_existing_forward = false;
+
+    for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+
+        // New Host block starts — reset per-block matching state.
+        // Note: found_existing_forward is latching (never reset), so a
+        // forward found in an earlier matching block survives later blocks.
+        if trimmed.starts_with("Host ") {
+            in_matching_block = false;
+
+            let host_value = trimmed.strip_prefix("Host ").unwrap_or("").trim();
+            // Skip wildcard-only blocks (Host *)
+            if host_value.split_whitespace().all(|h| h.contains('*') || h.contains('?')) {
+                continue;
+            }
+            if host_value.split_whitespace().any(|h| h == host_pattern) {
+                in_matching_block = true;
+                // Fallback: inject after Host line if block has no HostName
+                if inject_after.is_none() {
+                    inject_after = Some(i);
+                }
+            }
+        }
+
+        // HostName in current block — prefer injecting after this line
+        if trimmed.starts_with("HostName ") || trimmed.starts_with("HostName\t") {
+            let hostname_value = trimmed.strip_prefix("HostName").unwrap_or("").trim();
+            if hostname_value == host_pattern {
+                in_matching_block = true;
+            }
+            if in_matching_block {
+                // Override: prefer injecting after HostName over Host line
+                inject_after = Some(i);
+            }
+        }
+
+        // Check if any matching block already has the forward (latching)
+        if in_matching_block && trimmed.contains(&forward_line) {
+            found_existing_forward = true;
+        }
+    }
+
+    if found_existing_forward {
         return Ok("already configured".to_string());
     }
 
-    let host_pattern = extract_hostname(host);
-    let mut found = false;
+    // Pass 2: build new config
     let mut new_config = String::new();
-    for line in config_content.lines() {
+    for (i, line) in lines.iter().enumerate() {
         new_config.push_str(line);
         new_config.push('\n');
-        if !found && line.trim().starts_with("HostName") && line.contains(&host_pattern) {
+        if Some(i) == inject_after {
             new_config.push_str(&format!("    {forward_line}\n"));
-            found = true;
         }
     }
-    if !found {
+
+    if inject_after.is_none() {
         new_config.push_str(&format!(
             "\n# clipaste remote paste\nHost clipaste-{host_pattern}\n    HostName {host_pattern}\n    {forward_line}\n"
         ));
     }
+
     std::fs::write(&ssh_config_path, &new_config)
         .map_err(|e| format!("Cannot write ~/.ssh/config: {e}"))?;
     Ok("OK (added RemoteForward)".to_string())
 }
 
 fn dirs_home() -> std::path::PathBuf {
+    // HOME is set on Unix/macOS; USERPROFILE is the Windows equivalent
     std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::path::PathBuf::from("/tmp"))
 }

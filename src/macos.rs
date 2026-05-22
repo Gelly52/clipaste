@@ -134,12 +134,6 @@ fn normalize(pb: &NSPasteboard, latest: &common::LatestImage) {
         .unwrap_or_default();
     common::log(&format!("normalized {filename} ({} bytes)", png_data.len()));
 
-    let filename = file_path
-        .file_name()
-        .map(|f| f.to_string_lossy().to_string())
-        .unwrap_or_default();
-    common::log(&format!("normalized {filename} ({} bytes)", png_data.len()));
-
     common::clean_old_temp_files();
 }
 
