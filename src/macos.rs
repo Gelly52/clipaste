@@ -221,6 +221,10 @@ pub fn run(latest: common::LatestImage) {
         std::process::id()
     ));
 
+    if let Some((mods, key)) = crate::config::load_paste_hotkey() {
+        crate::hotkey::start(mods, key);
+    }
+
     let pb = NSPasteboard::generalPasteboard();
 
     // Warm up: do a real pasteboard write cycle on a scratch pasteboard
