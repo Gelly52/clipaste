@@ -1,6 +1,9 @@
 mod common;
+mod config;
 mod server;
 mod ssh_setup;
+#[cfg(target_os = "macos")]
+mod hotkey;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "windows")]
