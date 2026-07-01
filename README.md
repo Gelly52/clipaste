@@ -47,6 +47,7 @@ clipaste ssh-setup user@your-server -p 22222   # custom SSH port
 ```
 
 This automatically:
+
 - Detects the remote OS (`uname -s`) and installs the right helpers
 - On a Linux remote: installs an xclip/wl-paste shim (`~/.local/bin/`)
 - Installs a universal `clipaste-paste` command on every remote
@@ -122,14 +123,14 @@ HTTP server ◄──── WSL2 network ────────► curl $WIN_H
 
 ## Paste shortcuts
 
-| Scenario | Shortcut | How it works |
-|----------|----------|-------------|
-| **Local terminal (macOS)** | **Cmd+V** | Ghostty/iTerm2 paste file path → tool reads file |
-| **Local terminal** | **Ctrl+V** | Claude Code reads clipboard image directly |
-| **SSH remote — Claude Code (Linux)** | **Ctrl+V** | xclip shim → HTTP tunnel → local PNG |
-| **SSH remote — Codex / macOS remote** | `clipaste-paste` | helper fetches PNG → paste the printed path |
-| **WSL2 — Claude Code** | **Ctrl+V** | xclip shim → HTTP → Windows host PNG |
-| **WSL2 — Codex** | `clipaste-paste` | helper fetches PNG → paste the printed path |
+| Scenario                              | Shortcut         | How it works                                     |
+| ------------------------------------- | ---------------- | ------------------------------------------------ |
+| **Local terminal (macOS)**            | **Cmd+V**        | Ghostty/iTerm2 paste file path → tool reads file |
+| **Local terminal**                    | **Ctrl+V**       | Claude Code reads clipboard image directly       |
+| **SSH remote — Claude Code (Linux)**  | **Ctrl+V**       | xclip shim → HTTP tunnel → local PNG             |
+| **SSH remote — Codex / macOS remote** | `clipaste-paste` | helper fetches PNG → paste the printed path      |
+| **WSL2 — Claude Code**                | **Ctrl+V**       | xclip shim → HTTP → Windows host PNG             |
+| **WSL2 — Codex**                      | `clipaste-paste` | helper fetches PNG → paste the printed path      |
 
 **Tip:** On a Linux remote, Claude Code pastes with Ctrl+V. Codex CLI and macOS
 remotes use the `clipaste-paste` helper instead (Codex bypasses the xclip shim).
@@ -142,25 +143,41 @@ remotes use the `clipaste-paste` helper instead (Codex bypasses the xclip shim).
 
 ## Compatibility
 
-| Terminal | macOS Cmd+V | macOS Ctrl+V | Windows Ctrl+V | SSH Ctrl+V | WSL2 Ctrl+V |
-|----------|:-----------:|:------------:|:--------------:|:----------:|:-----------:|
-| Ghostty  | ✅          | ✅           | —              | ✅         | —           |
-| Alacritty| ✅          | ✅           | —              | ✅         | —           |
-| iTerm2   | ✅          | ✅           | —              | ✅         | —           |
-| Terminal.app | ✅       | ✅           | —              | ✅         | —           |
-| WezTerm  | ✅          | ✅           | ✅             | ✅         | ✅          |
-| Kitty    | ✅          | ✅           | ✅             | ✅         | ✅          |
-| Windows Terminal | —   | —            | ✅             | —          | ✅          |
+| Terminal         | macOS Cmd+V | macOS Ctrl+V | Windows Ctrl+V | SSH Ctrl+V | WSL2 Ctrl+V |
+| ---------------- | :---------: | :----------: | :------------: | :--------: | :---------: |
+| Ghostty          |     ✅      |      ✅      |       —        |     ✅     |      —      |
+| Alacritty        |     ✅      |      ✅      |       —        |     ✅     |      —      |
+| iTerm2           |     ✅      |      ✅      |       —        |     ✅     |      —      |
+| Terminal.app     |     ✅      |      ✅      |       —        |     ✅     |      —      |
+| WezTerm          |     ✅      |      ✅      |       ✅       |     ✅     |     ✅      |
+| Kitty            |     ✅      |      ✅      |       ✅       |     ✅     |     ✅      |
+| Windows Terminal |      —      |      —       |       ✅       |     —      |     ✅      |
 
-| AI Tool | Local | SSH Remote | WSL2 |
-|---------|:-----:|:----------:|:----:|
-| Claude Code | ✅ | ✅ Ctrl+V | ✅ Ctrl+V |
-| Codex CLI   | ✅ | ⚠️ via `clipaste-paste` | ⚠️ via `clipaste-paste` |
-| Cursor CLI  | ✅ | ✅ Ctrl+V | ✅ Ctrl+V |
+| AI Tool     | Local |       SSH Remote        |          WSL2           |
+| ----------- | :---: | :---------------------: | :---------------------: |
+| Claude Code |  ✅   |        ✅ Ctrl+V        |        ✅ Ctrl+V        |
+| Codex CLI   |  ✅   | ⚠️ via `clipaste-paste` | ⚠️ via `clipaste-paste` |
+| Cursor CLI  |  ✅   |        ✅ Ctrl+V        |        ✅ Ctrl+V        |
 
 > Codex reads the clipboard in-process and bypasses the xclip shim, so it can't
 > paste images natively over SSH/WSL2 — use the `clipaste-paste` helper. macOS
 > remotes (any tool) also use `clipaste-paste`. See [SSH Remote Paste](#ssh-remote-paste).
+
+## Custom paste hotkey
+
+You can remap the paste shortcut to a different key combination (e.g. use **Ctrl+V** instead of **Cmd+V** on macOS). Create a config file:
+
+- **macOS / Linux:** `~/.config/clipaste/config.toml`
+- **Windows:** `C:\Users\<you>\.config\clipaste\config.toml`
+
+```toml
+paste_hotkey_macos = "ctrl+v"
+paste_hotkey_windows = "alt+v"
+```
+
+A generic `paste_hotkey` is also supported as a fallback for both platforms. Supported modifiers: `ctrl`, `cmd`, `shift`, `alt`. Supported keys: `a`–`z`, `0`–`9`. If omitted, no hotkey is registered and the default paste shortcut is unchanged.
+
+> **Note:** On macOS, the global hotkey requires **Accessibility permission** — the system will prompt you on first launch. Grant it in System Settings → Privacy & Security → Accessibility.
 
 ## Managing
 
@@ -221,15 +238,16 @@ clipaste works with Ghostty, Alacritty, iTerm2, Terminal.app, WezTerm, Kitty, an
 ## How is this different from...
 
 - **[cc-clip](https://github.com/ShunmeiCho/cc-clip)** — SSH clipboard bridge only. clipaste handles both local paste fix AND SSH bridge in one tool, with no dependencies on the remote server (just `curl`).
-- **[shotpath](https://hboon.com/shotpath-automatically-copy-macos-screenshot-paths/)** — Monitors screenshot *files* on disk. clipaste works with clipboard screenshots (no file saved to Desktop).
+- **[shotpath](https://hboon.com/shotpath-automatically-copy-macos-screenshot-paths/)** — Monitors screenshot _files_ on disk. clipaste works with clipboard screenshots (no file saved to Desktop).
 - **[impaste](https://til.simonwillison.net/macos/impaste)** — A pipe-based tool (`impaste | pbcopy`). clipaste is fully automatic, no manual step needed.
-- **[pngpaste](https://github.com/jcsalterego/pngpaste)** — Extracts clipboard images to files. clipaste does the reverse: it makes clipboard images available *as* files for terminals.
+- **[pngpaste](https://github.com/jcsalterego/pngpaste)** — Extracts clipboard images to files. clipaste does the reverse: it makes clipboard images available _as_ files for terminals.
 
 ## Related issues
 
 This fixes a long-standing pain point across multiple projects:
 
 **Local paste (macOS/Windows):**
+
 - [anthropics/claude-code#2102](https://github.com/anthropics/claude-code/issues/2102) — Clipboard Image Parsing Failure on macOS
 - [anthropics/claude-code#17042](https://github.com/anthropics/claude-code/issues/17042) — Ctrl+V clipboard paste fails on macOS
 - [anthropics/claude-code#26901](https://github.com/anthropics/claude-code/issues/26901) — Image paste from clipboard no longer works
@@ -237,6 +255,7 @@ This fixes a long-standing pain point across multiple projects:
 - [ghostty-org/ghostty#10478](https://github.com/ghostty-org/ghostty/discussions/10478) — Support pasting screenshot images
 
 **SSH remote paste:**
+
 - [anthropics/claude-code#5277](https://github.com/anthropics/claude-code/issues/5277) — Image paste in SSH/SFTP
 - [anthropics/claude-code#13738](https://github.com/anthropics/claude-code/issues/13738) — Clipboard image paste not working in WSL
 - [anthropics/claude-code#8324](https://github.com/anthropics/claude-code/issues/8324) — Can't paste image from clipboard on Linux
