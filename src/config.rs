@@ -1,6 +1,8 @@
 pub fn load_paste_hotkey() -> Option<(u64, u16)> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE")).ok()?;
     let c = std::fs::read_to_string(
-        format!("{}/.config/clipaste/config.toml", std::env::var("HOME").ok()?)
+        format!("{home}/.config/clipaste/config.toml")
     ).ok()?;
     let k = if cfg!(target_os = "macos") { "paste_hotkey_macos" } else { "paste_hotkey_windows" };
     let val = find(&c, k).or_else(|| find(&c, "paste_hotkey"))?;
