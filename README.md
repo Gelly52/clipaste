@@ -1,5 +1,9 @@
 # clipaste
 
+> Forked from [hqhq1025/clipaste](https://github.com/hqhq1025/clipaste) — added configurable paste hotkey support.
+>
+> [中文文档](README_CN.md)
+
 Fix screenshot paste in terminal AI tools — locally, over SSH, and in WSL2.
 
 **clipaste** is a lightweight clipboard daemon for developers who use terminal-based AI coding tools like Claude Code, Codex CLI, and Cursor. Install with one command via Homebrew (macOS) or PowerShell (Windows), and screenshot paste just works — in Ghostty, Alacritty, iTerm2, Kitty, WezTerm, and more. It also bridges your clipboard to remote servers over SSH and to WSL2 environments. Written in Rust, clipaste uses only 9 MB of RAM with 0% CPU overhead.
@@ -16,11 +20,23 @@ Fix screenshot paste in terminal AI tools — locally, over SSH, and in WSL2.
 
 ## Install
 
-### macOS (Homebrew)
+### macOS (Homebrew) — original, without hotkey support
 
 ```bash
 brew install hqhq1025/clipaste/clipaste
 brew services start clipaste
+```
+
+### This fork (with custom paste hotkey)
+
+```bash
+git clone https://github.com/hqhq1025/clipaste.git
+cd clipaste
+cargo build --release
+# install & auto-start on macOS:
+cp target/release/clipaste ~/.local/bin/
+codesign --force --sign - ~/.local/bin/clipaste
+# create a LaunchAgent or use the binary directly
 ```
 
 ### Windows (PowerShell)
